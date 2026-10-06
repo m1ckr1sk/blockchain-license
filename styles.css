@@ -55,6 +55,20 @@ h1 {
   font-size: clamp(2rem, 3vw, 3rem);
 }
 
+.role-indicator {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.role-indicator.mode-primary {
+  color: var(--muted);
+}
+
+.role-indicator.mode-peer {
+  color: #93c5fd;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

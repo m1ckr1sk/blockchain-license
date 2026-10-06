@@ -140,13 +140,82 @@ The current test suite covers:
 
 ## Docker
 
-Build and run with Docker Compose:
+Build and run two demo nodes with Docker Compose:
 
 ```bash
 docker compose up --build
 ```
 
-App is exposed at <http://localhost:8000>.
+Compose demo endpoints:
+
+- Node A UI/API: <http://localhost:8001>
+- Node B UI/API: <http://localhost:8002>
+
+Peer URL pattern between containers (for peer registration/sync):
+
+- from node-a to node-b: `http://node-b:8000`
+- from node-b to node-a: `http://node-a:8000`
+
+Local non-Docker single-node development remains unchanged via `uvicorn app.main:app --reload` at <http://localhost:8000>.
+
+### Two-Node Sync + Reconcile Demo (Windows PowerShell)
+
+The following steps are copy/paste-ready for PowerShell and exercise peer sync, tamper detection, and reconciliation.
+
+1. Start both nodes with one command:
+
+```powershell
+docker compose up --build -d
+```
+
+1. Register node-b as a peer of node-a using `baseUrl`:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8001/peers -ContentType 'application/json' -Body '{"name":"node-b","baseUrl":"http://node-b:8000"}'
+```
+
+1. Create extra activity on node-b (adds multiple blocks):
+
+```powershell
+$license = Invoke-RestMethod -Method Post -Uri http://localhost:8002/licenses -ContentType 'application/json' -Body '{"userId":"demo-user","contentId":"content-001","expiresAt":"2030-01-01T00:00:00Z"}'
+Invoke-RestMethod -Method Get -Uri ("http://localhost:8002/content/content-001?licenseId=" + $license.licenseId)
+Invoke-RestMethod -Method Get -Uri http://localhost:8002/blockchain/validate
+```
+
+1. Sync node-a from node-b and verify adoption:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8001/peers/node-b/sync
+Invoke-RestMethod -Method Get -Uri http://localhost:8001/blockchain/validate
+```
+
+Expected in sync response: `"adopted": true`.
+
+1. Tamper node-a and run reconcile:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8001/blockchain/tamper
+Invoke-RestMethod -Method Get -Uri http://localhost:8001/blockchain/validate
+Invoke-RestMethod -Method Post -Uri http://localhost:8001/blockchain/reconcile
+```
+
+1. Verify node-a chain is valid again:
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:8001/blockchain/validate
+```
+
+Expected after reconcile: validation returns `"valid": true`.
+
+Optional `curl.exe` equivalents:
+
+```powershell
+curl.exe -s -X POST http://localhost:8001/peers -H "Content-Type: application/json" -d "{\"name\":\"node-b\",\"baseUrl\":\"http://node-b:8000\"}"
+curl.exe -s -X POST http://localhost:8001/peers/node-b/sync
+curl.exe -s -X POST http://localhost:8001/blockchain/tamper
+curl.exe -s -X POST http://localhost:8001/blockchain/reconcile
+curl.exe -s http://localhost:8001/blockchain/validate
+```
 
 ## CI
 

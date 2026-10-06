@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -28,5 +29,6 @@ app.add_middleware(
 
 app.state.blockchain = BlockchainService()
 app.state.drm_service = DRMService(app.state.blockchain)
+app.state.node_role = os.getenv("NODE_ROLE", "primary")
 app.include_router(router)
 app.mount("/", StaticFiles(directory=str(BASE_DIR), html=True), name="static")

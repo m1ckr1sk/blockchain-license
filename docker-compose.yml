@@ -1,11 +1,33 @@
 services:
-  app:
+  node-a:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: blockchain-license-demo
+    image: blockchain-license-demo:latest
+    container_name: blockchain-license-node-a
     ports:
-      - "8000:8000"
+      - "8001:8000"
     restart: unless-stopped
     environment:
       PYTHONUNBUFFERED: "1"
+      NODE_NAME: "node-a"
+      NODE_ROLE: "primary"
+    networks:
+      - blockchain-net
+
+  node-b:
+    image: blockchain-license-demo:latest
+    container_name: blockchain-license-node-b
+    ports:
+      - "8002:8000"
+    restart: unless-stopped
+    environment:
+      PYTHONUNBUFFERED: "1"
+      NODE_NAME: "node-b"
+      NODE_ROLE: "peer"
+    networks:
+      - blockchain-net
+
+networks:
+  blockchain-net:
+    name: blockchain-license-net

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from datetime import datetime, timezone
+from urllib import error, request
 from typing import Any
 
 
@@ -20,7 +22,7 @@ class BlockchainService:
 
     def __init__(self) -> None:
         self.chain: list[dict[str, Any]] = []
-        self.peers: dict[str, list[dict[str, Any]]] = {}
+        self.peers: dict[str, dict[str, Any]] = {}
         self._create_genesis_block()
 
     def _create_genesis_block(self) -> None:
@@ -54,20 +56,95 @@ class BlockchainService:
         target["event"] = {**target.get("event", {}), "type": "TAMPERED_EVENT", "details": "Intentional tampering demonstration"}
         return self.validate_chain()
 
-    def register_peer(self, name: str, chain: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    def register_peer(
+        self,
+        name: str,
+        chain: list[dict[str, Any]] | None = None,
+        base_url: str | None = None,
+    ) -> dict[str, Any]:
         if not name:
             raise ValueError("Peer name is required.")
 
-        if chain is None:
-            chain = [self.chain[0]]
+        if base_url:
+            normalized_url = base_url.rstrip("/")
+            self.peers[name] = {
+                "name": name,
+                "type": "url",
+                "base_url": normalized_url,
+                "chain": None,
+            }
+            return {
+                "name": name,
+                "type": "url",
+                "base_url": normalized_url,
+                "chain_length": None,
+                "status": "registered",
+            }
 
-        self.peers[name] = list(chain)
-        return {"name": name, "chain_length": len(self.peers[name]), "status": "registered"}
+        snapshot = [self.chain[0]] if chain is None else chain
+        self.peers[name] = {
+            "name": name,
+            "type": "snapshot",
+            "base_url": None,
+            "chain": deepcopy(snapshot),
+        }
+        return {
+            "name": name,
+            "type": "snapshot",
+            "base_url": None,
+            "chain_length": len(snapshot),
+            "status": "registered",
+        }
+
+    def _fetch_chain_from_url(self, base_url: str) -> list[dict[str, Any]]:
+        endpoint = f"{base_url}/blockchain"
+        with request.urlopen(endpoint, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        if not isinstance(payload, dict) or not isinstance(payload.get("blocks"), list):
+            raise ValueError("Peer blockchain response must contain a blocks list.")
+
+        return payload["blocks"]
+
+    def _resolve_peer_chain(self, peer_name: str) -> list[dict[str, Any]]:
+        peer = self.peers.get(peer_name)
+        if peer is None:
+            raise KeyError(f"Peer {peer_name} not found.")
+
+        peer_type = peer.get("type")
+        if peer_type == "url":
+            base_url = peer.get("base_url")
+            if not isinstance(base_url, str) or not base_url:
+                raise ValueError("Peer URL is not configured.")
+
+            return self._fetch_chain_from_url(base_url)
+
+        chain = peer.get("chain")
+        if not isinstance(chain, list):
+            raise ValueError("Peer snapshot chain is unavailable.")
+
+        return deepcopy(chain)
+
+    def list_peers(self) -> list[dict[str, Any]]:
+        peers: list[dict[str, Any]] = []
+        for peer_name, peer in self.peers.items():
+            chain = peer.get("chain")
+            chain_length = len(chain) if isinstance(chain, list) else None
+            peers.append(
+                {
+                    "name": peer_name,
+                    "type": peer.get("type", "snapshot"),
+                    "base_url": peer.get("base_url"),
+                    "chain_length": chain_length,
+                }
+            )
+        return peers
 
     def sync_with_peer(self, peer_name: str) -> dict[str, Any]:
-        peer_chain = self.peers.get(peer_name)
-        if peer_chain is None:
-            raise KeyError(f"Peer {peer_name} not found.")
+        try:
+            peer_chain = self._resolve_peer_chain(peer_name)
+        except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            return {"peer": peer_name, "adopted": False, "reason": f"Failed to fetch peer chain: {exc}"}
 
         peer_validation = self.validate_chain(peer_chain)
         if not peer_validation["valid"]:
@@ -76,7 +153,7 @@ class BlockchainService:
         if len(peer_chain) <= len(self.chain):
             return {"peer": peer_name, "adopted": False, "reason": "Peer chain is not longer than the local chain."}
 
-        self.chain = list(peer_chain)
+        self.chain = deepcopy(peer_chain)
         return {"peer": peer_name, "adopted": True, "chain_length": len(self.chain), "message": "Local chain replaced with valid peer chain."}
 
     def reconcile_with_peers(self) -> dict[str, Any]:
@@ -89,7 +166,12 @@ class BlockchainService:
         best_peer_name: str | None = None
         best_peer_chain: list[dict[str, Any]] | None = None
 
-        for peer_name, peer_chain in self.peers.items():
+        for peer_name in self.peers:
+            try:
+                peer_chain = self._resolve_peer_chain(peer_name)
+            except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+                continue
+
             if not self.validate_chain(peer_chain)["valid"]:
                 continue
 
@@ -116,7 +198,7 @@ class BlockchainService:
                     "reason": "Local chain is valid and no longer valid peer chain was found.",
                 }
 
-            self.chain = list(best_peer_chain)
+            self.chain = deepcopy(best_peer_chain)
             return {
                 "reconciled": True,
                 "adopted": True,
@@ -125,7 +207,7 @@ class BlockchainService:
                 "message": "Local chain replaced with the longest valid peer chain.",
             }
 
-        self.chain = list(best_peer_chain)
+        self.chain = deepcopy(best_peer_chain)
         return {
             "reconciled": True,
             "adopted": True,

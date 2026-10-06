@@ -10,8 +10,8 @@ router = APIRouter()
 
 
 @router.get("/health")
-def healthcheck() -> dict[str, str]:
-    return {"status": "ok"}
+def healthcheck(request: Request) -> dict[str, str]:
+    return {"status": "ok", "role": request.app.state.node_role}
 
 
 @router.get("/licenses")
@@ -29,16 +29,20 @@ def get_license(request: Request, license_id: str) -> dict[str, Any]:
 
 @router.get("/peers")
 def get_peers(request: Request) -> dict[str, Any]:
-    return {"peers": request.app.state.blockchain.peers}
+    return {"peers": request.app.state.blockchain.list_peers()}
 
 
 @router.post("/peers")
-def register_peer(request: Request, payload: dict[str, str]) -> dict[str, Any]:
+def register_peer(request: Request, payload: dict[str, Any]) -> dict[str, Any]:
     peer_name = payload.get("name")
     if not peer_name:
         raise HTTPException(status_code=400, detail="Peer name is required.")
 
-    return request.app.state.blockchain.register_peer(peer_name)
+    base_url = payload.get("base_url") or payload.get("baseUrl")
+    if base_url is not None and not isinstance(base_url, str):
+        raise HTTPException(status_code=400, detail="Peer base URL must be a string when provided.")
+
+    return request.app.state.blockchain.register_peer(peer_name, base_url=base_url)
 
 
 @router.post("/peers/{peer_name}/sync")

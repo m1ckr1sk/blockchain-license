@@ -317,3 +317,75 @@ def test_health_endpoint_and_tamper_endpoint_work_as_expected():
     validation = client.get("/blockchain/validate")
     assert validation.status_code == 200
     assert validation.json()["valid"] is False
+
+
+def test_register_peer_accepts_base_url_aliases_and_lists_peer_metadata():
+    client = TestClient(app)
+
+    response_camel = client.post("/peers", json={"name": "peer-camel", "baseUrl": "http://peer-a:8000/"})
+    assert response_camel.status_code == 200
+    assert response_camel.json()["type"] == "url"
+
+    response_snake = client.post("/peers", json={"name": "peer-snake", "base_url": "http://peer-b:8000"})
+    assert response_snake.status_code == 200
+    assert response_snake.json()["type"] == "url"
+
+    peers = client.get("/peers")
+    assert peers.status_code == 200
+    payload = peers.json()["peers"]
+    by_name = {peer["name"]: peer for peer in payload}
+    assert by_name["peer-camel"]["base_url"] == "http://peer-a:8000"
+    assert by_name["peer-camel"]["type"] == "url"
+    assert by_name["peer-snake"]["base_url"] == "http://peer-b:8000"
+    assert by_name["peer-snake"]["type"] == "url"
+
+
+def test_sync_with_url_peer_fetches_chain_at_request_time(monkeypatch):
+    from app.blockchain.service import BlockchainService
+
+    local = BlockchainService()
+    local.register_peer("peer-url", base_url="http://peer:8000")
+
+    remote_a = BlockchainService()
+    remote_b = BlockchainService()
+    remote_b.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-URL", "userId": "peer-user", "contentId": "content-001"})
+    chains = [remote_a.chain, remote_b.chain]
+    call_count = {"value": 0}
+
+    def fake_fetch(_base_url: str):
+        idx = min(call_count["value"], len(chains) - 1)
+        call_count["value"] += 1
+        return chains[idx]
+
+    monkeypatch.setattr(local, "_fetch_chain_from_url", fake_fetch)
+
+    first = local.sync_with_peer("peer-url")
+    assert first["adopted"] is False
+    assert "not longer" in first["reason"].lower()
+
+    second = local.sync_with_peer("peer-url")
+    assert second["adopted"] is True
+    assert len(local.chain) == len(remote_b.chain)
+    assert call_count["value"] == 2
+
+
+def test_reconcile_with_url_peer_recovers_invalid_local_chain_even_when_not_longer(monkeypatch):
+    from app.blockchain.service import BlockchainService
+
+    local = BlockchainService()
+    local.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-LOCAL", "userId": "local-user", "contentId": "content-001"})
+    local.chain[1]["event"]["type"] = "TAMPERED_EVENT"
+    assert local.validate_chain()["valid"] is False
+
+    remote = BlockchainService()
+    remote.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-PEER", "userId": "peer-user", "contentId": "content-001"})
+    assert len(remote.chain) == len(local.chain)
+
+    local.register_peer("peer-url", base_url="http://peer:8000")
+    monkeypatch.setattr(local, "_fetch_chain_from_url", lambda _base_url: remote.chain)
+
+    result = local.reconcile_with_peers()
+    assert result["reconciled"] is True
+    assert result["adopted"] is True
+    assert result["peer"] == "peer-url"
+    assert local.validate_chain()["valid"] is True

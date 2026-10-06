@@ -59,7 +59,7 @@ Traditional content protection often relies on ad hoc authorization checks in ap
 - `POST /blockchain/tamper` to simulate tampering in a demo environment
 - `POST /blockchain/reconcile` to recover local chain from valid peers
 - `GET /peers` to inspect registered peers
-- `POST /peers` to register a peer by name
+- `POST /peers` to register a peer by name, with optional `baseUrl`/`base_url` for URL-based sync
 - `POST /peers/{peer_name}/sync` to adopt a valid longer peer chain
 
 ## Proposed Technical Architecture

@@ -2,6 +2,7 @@ const state = {
   chain: [],
   licenses: [],
   audit: [],
+  role: 'primary',
 };
 
 const ui = {
@@ -9,6 +10,9 @@ const ui = {
   ledgerBadge: document.getElementById('ledger-badge'),
   activeLicenseCount: document.getElementById('active-license-count'),
   lastAccessState: document.getElementById('last-access-state'),
+  roleIndicator: document.getElementById('role-indicator'),
+  createLicensePanel: document.getElementById('create-license-panel'),
+  protectedContentPanel: document.getElementById('protected-content-panel'),
   licenseForm: document.getElementById('license-form'),
   licenseResult: document.getElementById('license-result'),
   contentAccess: document.getElementById('content-access'),
@@ -21,11 +25,89 @@ const ui = {
   registerPeer: document.getElementById('register-peer'),
   syncPeer: document.getElementById('sync-peer'),
   peerNameInput: document.getElementById('peer-name-input'),
+  peerBaseUrlInput: document.getElementById('peer-base-url-input'),
   chainList: document.getElementById('chain-list'),
   auditList: document.getElementById('audit-list'),
   licenseIdInput: document.getElementById('license-id-input'),
   licensesTableBody: document.getElementById('licenses-table-body'),
 };
+
+function normalizeRole(role) {
+  return String(role || 'primary').toLowerCase() === 'peer' ? 'peer' : 'primary';
+}
+
+function isPeerMode() {
+  return state.role === 'peer';
+}
+
+function applyRoleMode() {
+  const peerMode = isPeerMode();
+
+  if (ui.roleIndicator) {
+    ui.roleIndicator.textContent = `Node mode: ${peerMode ? 'Peer' : 'Primary'}`;
+    ui.roleIndicator.className = `role-indicator ${peerMode ? 'mode-peer' : 'mode-primary'}`;
+  }
+
+  if (ui.createLicensePanel) {
+    ui.createLicensePanel.hidden = peerMode;
+  }
+
+  if (ui.protectedContentPanel) {
+    ui.protectedContentPanel.hidden = peerMode;
+  }
+
+  if (ui.licenseForm) {
+    Array.from(ui.licenseForm.elements).forEach((element) => {
+      element.disabled = peerMode;
+    });
+  }
+
+  if (ui.contentAccess) {
+    ui.contentAccess.disabled = peerMode;
+  }
+}
+
+async function initializeRoleMode() {
+  try {
+    const health = await apiFetch('/health');
+    state.role = normalizeRole(health.role);
+  } catch {
+    state.role = 'primary';
+  }
+
+  applyRoleMode();
+}
+
+function getDefaultPeerBaseUrl() {
+  const hostname = window.location.hostname.toLowerCase();
+  const port = window.location.port;
+
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && port === '8001') {
+    return 'http://node-b:8000';
+  }
+
+  if ((hostname === 'localhost' || hostname === '127.0.0.1') && port === '8002') {
+    return 'http://node-a:8000';
+  }
+
+  if (hostname === 'node-a') {
+    return 'http://node-b:8000';
+  }
+
+  if (hostname === 'node-b') {
+    return 'http://node-a:8000';
+  }
+
+  return 'http://node-b:8000';
+}
+
+function initializePeerBaseUrl() {
+  if (!ui.peerBaseUrlInput) {
+    return;
+  }
+
+  ui.peerBaseUrlInput.value = getDefaultPeerBaseUrl();
+}
 
 async function apiFetch(path, options = {}) {
   const response = await fetch(path, {
@@ -176,7 +258,9 @@ async function refreshDashboard() {
 
     state.chain = chainData.blocks || [];
     state.licenses = licenseData.licenses || [];
-    const peerNames = Object.keys(peersData.peers || {});
+    const peerNames = Array.isArray(peersData.peers)
+      ? peersData.peers.map((peer) => peer?.name).filter(Boolean)
+      : Object.keys(peersData.peers || {});
 
     const activeCount = state.licenses.filter((license) => deriveLicenseState(license) === 'ACTIVE').length;
     ui.activeLicenseCount.textContent = String(activeCount);
@@ -206,6 +290,11 @@ async function refreshDashboard() {
 
 async function handleLicenseCreate(event) {
   event.preventDefault();
+
+  if (isPeerMode()) {
+    setResult(ui.licenseResult, 'error', 'License creation is disabled in peer mode.');
+    return;
+  }
 
   const formData = new FormData(event.currentTarget);
   const userId = formData.get('userId')?.toString().trim();
@@ -238,6 +327,11 @@ async function handleLicenseCreate(event) {
 }
 
 async function handleContentAccess() {
+  if (isPeerMode()) {
+    setResult(ui.contentResult, 'error', 'Protected content requests are disabled in peer mode.');
+    return;
+  }
+
   const licenseId = ui.licenseIdInput.value.trim();
   const contentId = document.getElementById('content-id').value.trim() || 'content-001';
 
@@ -342,15 +436,21 @@ async function handleReconcile() {
 
 async function handlePeerRegister() {
   const peerName = ui.peerNameInput.value.trim();
+  const baseUrl = ui.peerBaseUrlInput?.value.trim() || '';
   if (!peerName) {
     setResult(ui.licenseResult, 'error', 'Peer name is required.');
     return;
   }
 
   try {
+    const payload = {
+      name: peerName,
+      ...(baseUrl ? { baseUrl } : {}),
+    };
+
     const result = await apiFetch('/peers', {
       method: 'POST',
-      body: JSON.stringify({ name: peerName }),
+      body: JSON.stringify(payload),
     });
     setResult(ui.licenseResult, 'success', `Peer ${result.name} registered with ${result.chain_length} blocks.`);
     addAuditEntry(`Peer ${result.name} registered.`);
@@ -391,5 +491,11 @@ ui.tamperChain.addEventListener('click', handleTampering);
 ui.registerPeer.addEventListener('click', handlePeerRegister);
 ui.syncPeer.addEventListener('click', handlePeerSync);
 
-refreshDashboard();
-renderAudit();
+async function initializeApp() {
+  initializePeerBaseUrl();
+  await initializeRoleMode();
+  await refreshDashboard();
+  renderAudit();
+}
+
+initializeApp();
