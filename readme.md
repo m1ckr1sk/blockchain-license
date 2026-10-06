@@ -83,6 +83,29 @@ Key modules:
 4. Register peer metadata: POST /peers with a peer name.
 5. Recover state: POST /blockchain/reconcile adopts the best valid peer chain when local chain is invalid (or when a longer valid peer chain is available).
 
+## Demo Flow Diagram
+
+The following end-to-end flow summarizes the full two-node demo, including the granted-access path, tamper failure path, and peer-assisted recovery path.
+
+```mermaid
+flowchart TD
+      A1[Start node-a primary UI] --> A2[Start node-b peer UI]
+      A2 --> B1[Register peer on node-a with baseUrl for node-b]
+      B1 --> C1[Create license on node-a]
+      C1 --> D1[Request protected content on node-a]
+      D1 --> D2[Access granted]
+      D2 --> E1[Validate blockchain on node-a]
+      E1 --> F1[Tamper chain on node-a]
+      F1 --> G1[Validate chain fails]
+      G1 --> G2[Protected content denied]
+      G2 --> H1[Create additional activity on node-b]
+      H1 --> I1[Sync node-a with node-b peer]
+      I1 --> I2[Longer valid chain path discovered]
+      I2 --> J1[Reconcile node-a after tampering]
+      J1 --> K1[Validate restored chain]
+      K1 --> K2[Resume protected content access]
+```
+
 ## Frontend Capabilities
 
 The root UI at / provides a single-page operational dashboard:
