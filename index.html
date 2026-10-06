@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blockchain License Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Educational prototype</p>
+          <h1>Blockchain License Demo</h1>
+        </div>
+        <div class="pill">DRM ledger status: <span id="ledger-badge" class="status-good">Valid</span></div>
+      </header>
+
+      <main class="content">
+        <section class="summary-grid">
+          <article class="summary-card accent">
+            <span class="label">Chain integrity</span>
+            <strong id="chain-status">Valid</strong>
+            <small>Genesis + event blocks verified</small>
+          </article>
+          <article class="summary-card">
+            <span class="label">Active licenses</span>
+            <strong id="active-license-count">0</strong>
+            <small>Currently valid permits</small>
+          </article>
+          <article class="summary-card">
+            <span class="label">Last access</span>
+            <strong id="last-access-state">Waiting</strong>
+            <small>Protected content decision</small>
+          </article>
+        </section>
+
+        <section class="panel-grid">
+          <article class="panel card">
+            <div class="panel-header">
+              <h2>Create license</h2>
+              <span class="badge neutral">Issue</span>
+            </div>
+
+            <form id="license-form" class="stacked-form">
+              <label>
+                User ID
+                <input id="user-id" name="userId" type="text" value="alice" required />
+              </label>
+
+              <label>
+                Content ID
+                <input id="content-id" name="contentId" type="text" value="course-module-01" required />
+              </label>
+
+              <label>
+                Valid for days
+                <input id="days" name="days" type="number" min="1" max="365" value="30" required />
+              </label>
+
+              <button type="submit" class="primary">Create license</button>
+            </form>
+
+            <div id="license-result" class="result-box info">
+              No license created yet.
+            </div>
+          </article>
+
+          <article class="panel card">
+            <div class="panel-header">
+              <h2>Protected content</h2>
+              <span class="badge warn">Access check</span>
+            </div>
+
+            <div class="stacked-form">
+              <label>
+                License ID
+                <input id="license-id-input" type="text" placeholder="LIC-001" />
+              </label>
+
+              <button id="content-access" class="secondary">Request protected content</button>
+            </div>
+
+            <div id="content-result" class="result-box info">
+              Awaiting request.
+            </div>
+
+            <pre id="content-preview" class="content-preview">Protected content is shown only after successful validation.</pre>
+          </article>
+
+          <article class="panel card">
+            <div class="panel-header">
+              <h2>Blockchain controls</h2>
+              <span class="badge neutral">Audit</span>
+            </div>
+
+            <div class="button-stack">
+              <button id="validate-chain" class="primary compact">Validate chain</button>
+              <button id="revoke-license" class="warning compact">Revoke latest license</button>
+              <button id="tamper-chain" class="danger compact">Simulate tampering</button>
+            </div>
+
+            <ul id="chain-list" class="ledger-list"></ul>
+          </article>
+        </section>
+
+        <section class="panel card audit-panel">
+          <div class="panel-header">
+            <h2>Audit trail</h2>
+            <span class="badge neutral">Events</span>
+          </div>
+
+          <ul id="audit-list" class="audit-list"></ul>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
