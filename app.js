@@ -15,6 +15,7 @@ const ui = {
   contentResult: document.getElementById('content-result'),
   contentPreview: document.getElementById('content-preview'),
   validateChain: document.getElementById('validate-chain'),
+  reconcileChain: document.getElementById('reconcile-chain'),
   revokeLicense: document.getElementById('revoke-license'),
   tamperChain: document.getElementById('tamper-chain'),
   registerPeer: document.getElementById('register-peer'),
@@ -320,6 +321,25 @@ async function handleTampering() {
   }
 }
 
+async function handleReconcile() {
+  try {
+    const result = await apiFetch('/blockchain/reconcile', { method: 'POST' });
+    if (result.reconciled) {
+      setResult(ui.contentResult, 'success', result.message || 'Blockchain reconciled successfully.');
+      addAuditEntry(`Blockchain reconciled${result.peer ? ` with ${result.peer}` : ''}.`);
+    } else {
+      const reason = result.reason || result.message || 'Reconciliation did not adopt a peer chain.';
+      setResult(ui.contentResult, 'error', reason);
+      addAuditEntry(`Blockchain reconciliation skipped: ${reason}`);
+    }
+  } catch (error) {
+    setResult(ui.contentResult, 'error', error.message);
+    addAuditEntry(`Blockchain reconciliation failed: ${error.message}`);
+  } finally {
+    await refreshDashboard();
+  }
+}
+
 async function handlePeerRegister() {
   const peerName = ui.peerNameInput.value.trim();
   if (!peerName) {
@@ -365,6 +385,7 @@ async function handlePeerSync() {
 ui.licenseForm.addEventListener('submit', handleLicenseCreate);
 ui.contentAccess.addEventListener('click', handleContentAccess);
 ui.validateChain.addEventListener('click', handleChainValidation);
+ui.reconcileChain.addEventListener('click', handleReconcile);
 ui.revokeLicense.addEventListener('click', handleRevocation);
 ui.tamperChain.addEventListener('click', handleTampering);
 ui.registerPeer.addEventListener('click', handlePeerRegister);
