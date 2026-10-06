@@ -100,6 +100,17 @@
               <button id="tamper-chain" class="danger compact">Simulate tampering</button>
             </div>
 
+            <div class="stacked-form" style="margin-top: 16px;">
+              <label>
+                Peer name
+                <input id="peer-name-input" type="text" value="peer-1" />
+              </label>
+              <div class="button-stack">
+                <button id="register-peer" class="secondary compact">Register peer</button>
+                <button id="sync-peer" class="primary compact">Sync with peer</button>
+              </div>
+            </div>
+
             <ul id="chain-list" class="ledger-list"></ul>
           </article>
         </section>
@@ -111,6 +122,29 @@
           </div>
 
           <ul id="audit-list" class="audit-list"></ul>
+        </section>
+
+        <section class="panel card audit-panel">
+          <div class="panel-header">
+            <h2>Issued licenses</h2>
+            <span class="badge neutral">State</span>
+          </div>
+
+          <div class="licenses-table-wrap">
+            <table class="licenses-table">
+              <thead>
+                <tr>
+                  <th>License ID</th>
+                  <th>User</th>
+                  <th>Content</th>
+                  <th>Issued</th>
+                  <th>Expires</th>
+                  <th>State</th>
+                </tr>
+              </thead>
+              <tbody id="licenses-table-body"></tbody>
+            </table>
+          </div>
         </section>
       </main>
     </div>

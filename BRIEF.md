@@ -15,6 +15,8 @@ Traditional content protection often relies on ad hoc authorization checks in ap
 - Support license issuance, validation, and revocation
 - Track access attempts and successful content retrievals
 - Show how a tampered chain can be detected by validation logic
+- Demonstrate distributed ledger basics via peer registration and sync
+- Support reconciliation from valid peers after local tampering
 - Keep the implementation educational, minimal, and maintainable
 
 ## Non-Goals
@@ -43,14 +45,22 @@ Traditional content protection often relies on ad hoc authorization checks in ap
 6. Protect content access behind license validation
 7. Record access events and audit activity
 8. Expose endpoints for viewing chain state and validation status
+9. Register peers and sync from longer valid peer chains
+10. Reconcile local state from valid peers when tampering is detected
 
 ### API Surface
 
 - `POST /licenses` to create a license
 - `POST /licenses/{id}/revoke` to revoke a license
 - `GET /content/{content_id}` to retrieve protected content when authorized
+- `GET /health` for service health checks
 - `GET /blockchain/validate` to verify chain integrity
-- `GET /blockchain` or equivalent to inspect stored blocks
+- `GET /blockchain` to inspect stored blocks
+- `POST /blockchain/tamper` to simulate tampering in a demo environment
+- `POST /blockchain/reconcile` to recover local chain from valid peers
+- `GET /peers` to inspect registered peers
+- `POST /peers` to register a peer by name
+- `POST /peers/{peer_name}/sync` to adopt a valid longer peer chain
 
 ## Proposed Technical Architecture
 
@@ -70,6 +80,7 @@ Traditional content protection often relies on ad hoc authorization checks in ap
 - Add a baseline README and contributor guidance
 
 Acceptance criteria:
+
 - The repository has a clean Python project structure
 - Dependencies are documented
 - Contributors know how to run the project locally
@@ -82,6 +93,7 @@ Acceptance criteria:
 - Expose chain validation endpoints
 
 Acceptance criteria:
+
 - Chain starts with a valid genesis block
 - Each block links to the previous hash
 - Validation detects tampering
@@ -94,6 +106,7 @@ Acceptance criteria:
 - Add audit-friendly event creation
 
 Acceptance criteria:
+
 - License issuance produces a blockchain event
 - Revoked licenses fail validation
 - Expired licenses are rejected
@@ -105,6 +118,7 @@ Acceptance criteria:
 - Record successful and failed access attempts
 
 Acceptance criteria:
+
 - Unauthorized requests are rejected with an appropriate HTTP status
 - Authorized users receive content
 - Access records are written to the ledger or audit trail
@@ -116,6 +130,7 @@ Acceptance criteria:
 - Confirm happy-path and denial flows
 
 Acceptance criteria:
+
 - Core behaviors are covered by automated tests
 - Validation failures are easy to demonstrate in a dev environment
 

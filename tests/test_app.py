@@ -159,6 +159,144 @@ def test_content_access_is_denied_when_blockchain_is_tampered():
     assert "BLOCKCHAIN" in denied.json()["detail"]
 
 
+def test_peer_chain_can_sync_to_a_valid_longer_chain():
+    from app.blockchain.service import BlockchainService
+
+    local = BlockchainService()
+    remote = BlockchainService()
+    remote.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-PEER", "userId": "peer-user", "contentId": "content-001"})
+    remote.add_block({"type": "CONTENT_ACCESS", "licenseId": "LIC-PEER", "contentId": "content-001", "result": "GRANTED"})
+
+    local.register_peer("peer-1", remote.chain)
+    result = local.sync_with_peer("peer-1")
+
+    assert result["adopted"] is True
+    assert len(local.chain) == len(remote.chain)
+    assert local.chain[-1]["event"]["type"] == "CONTENT_ACCESS"
+
+
+def test_peer_chain_sync_rejects_invalid_longer_chain_and_keeps_local_chain():
+    from app.blockchain.service import BlockchainService
+
+    local = BlockchainService()
+    local.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-LOCAL", "userId": "local-user", "contentId": "content-001"})
+    initial_length = len(local.chain)
+
+    remote = BlockchainService()
+    remote.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-PEER", "userId": "peer-user", "contentId": "content-001"})
+    remote.add_block({"type": "CONTENT_ACCESS", "licenseId": "LIC-PEER", "contentId": "content-001", "result": "GRANTED"})
+    remote.chain[1]["event"]["type"] = "TAMPERED_EVENT"
+
+    local.register_peer("peer-invalid", remote.chain)
+    result = local.sync_with_peer("peer-invalid")
+
+    assert result["adopted"] is False
+    assert "invalid" in result["reason"].lower()
+    assert len(local.chain) == initial_length
+    assert local.chain[-1]["event"]["type"] == "LICENSE_ISSUED"
+
+
+def test_peer_chain_sync_rejects_chain_that_is_not_longer():
+    from app.blockchain.service import BlockchainService
+
+    local = BlockchainService()
+    local.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-LOCAL", "userId": "local-user", "contentId": "content-001"})
+
+    remote = BlockchainService()
+    remote.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-REMOTE", "userId": "remote-user", "contentId": "content-002"})
+
+    local.register_peer("peer-same-length", remote.chain)
+    result = local.sync_with_peer("peer-same-length")
+
+    assert result["adopted"] is False
+    assert "not longer" in result["reason"].lower()
+    assert local.chain[-1]["event"]["licenseId"] == "LIC-LOCAL"
+
+
+def test_sync_endpoint_returns_404_for_unknown_peer():
+    client = TestClient(app)
+
+    response = client.post("/peers/non-existent-peer/sync")
+
+    assert response.status_code == 404
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_reconcile_adopts_valid_peer_when_local_chain_is_invalid_even_if_not_longer():
+    from app.blockchain.service import BlockchainService
+
+    local = BlockchainService()
+    local.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-LOCAL", "userId": "local-user", "contentId": "content-001"})
+
+    remote = BlockchainService()
+    remote.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-PEER", "userId": "peer-user", "contentId": "content-001"})
+
+    local.chain[1]["event"]["type"] = "TAMPERED_EVENT"
+    assert local.validate_chain()["valid"] is False
+    assert len(local.chain) == len(remote.chain)
+
+    local.register_peer("peer-valid", remote.chain)
+    result = local.reconcile_with_peers()
+
+    assert result["reconciled"] is True
+    assert result["adopted"] is True
+    assert result["peer"] == "peer-valid"
+    assert len(local.chain) == len(remote.chain)
+    assert local.validate_chain()["valid"] is True
+
+
+def test_reconcile_keeps_local_when_local_is_valid_and_peer_is_not_longer():
+    from app.blockchain.service import BlockchainService
+
+    local = BlockchainService()
+    local.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-LOCAL", "userId": "local-user", "contentId": "content-001"})
+
+    remote = BlockchainService()
+    remote.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-REMOTE", "userId": "remote-user", "contentId": "content-002"})
+
+    local.register_peer("peer-same-length", remote.chain)
+    result = local.reconcile_with_peers()
+
+    assert result["reconciled"] is False
+    assert result["adopted"] is False
+    assert "valid" in result["reason"].lower()
+    assert local.chain[-1]["event"]["licenseId"] == "LIC-LOCAL"
+
+
+def test_reconcile_endpoint_returns_400_when_no_peers_registered():
+    client = TestClient(app)
+
+    response = client.post("/blockchain/reconcile")
+
+    assert response.status_code == 400
+    assert "no peers" in response.json()["detail"].lower()
+
+
+def test_reconcile_endpoint_recovers_tampered_chain_from_valid_peer():
+    client = TestClient(app)
+
+    client.post(
+        "/licenses",
+        json={"userId": "local-user", "contentId": "content-001", "expiresAt": "2030-01-01T00:00:00Z"},
+    )
+    tampered = client.post("/blockchain/tamper")
+    assert tampered.status_code == 200
+    assert tampered.json()["valid"] is False
+
+    remote = BlockchainService()
+    remote.add_block({"type": "LICENSE_ISSUED", "licenseId": "LIC-PEER", "userId": "peer-user", "contentId": "content-001"})
+    app.state.blockchain.register_peer("peer-valid", remote.chain)
+
+    response = client.post("/blockchain/reconcile")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["reconciled"] is True
+    assert payload["adopted"] is True
+    assert payload["peer"] == "peer-valid"
+    assert app.state.blockchain.validate_chain()["valid"] is True
+
+
 def test_health_endpoint_and_tamper_endpoint_work_as_expected():
     client = TestClient(app)
 

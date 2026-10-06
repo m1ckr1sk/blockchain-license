@@ -17,9 +17,13 @@ const ui = {
   validateChain: document.getElementById('validate-chain'),
   revokeLicense: document.getElementById('revoke-license'),
   tamperChain: document.getElementById('tamper-chain'),
+  registerPeer: document.getElementById('register-peer'),
+  syncPeer: document.getElementById('sync-peer'),
+  peerNameInput: document.getElementById('peer-name-input'),
   chainList: document.getElementById('chain-list'),
   auditList: document.getElementById('audit-list'),
   licenseIdInput: document.getElementById('license-id-input'),
+  licensesTableBody: document.getElementById('licenses-table-body'),
 };
 
 async function apiFetch(path, options = {}) {
@@ -78,6 +82,80 @@ function renderLedger() {
     .join('');
 }
 
+function toDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function deriveLicenseState(license) {
+  const explicit = String(license.status || '').toUpperCase();
+  if (explicit === 'REVOKED' || explicit === 'EXPIRED' || explicit === 'ACTIVE') {
+    return explicit;
+  }
+
+  if (license.revoked === true || license.isRevoked === true || license.revokedAt) {
+    return 'REVOKED';
+  }
+
+  const expiresAt = toDate(license.expiresAt || license.expires_at);
+  if (expiresAt && expiresAt.getTime() <= Date.now()) {
+    return 'EXPIRED';
+  }
+
+  return 'ACTIVE';
+}
+
+function formatDate(dateLike) {
+  const date = toDate(dateLike);
+  if (!date) {
+    return 'n/a';
+  }
+
+  return date.toLocaleString();
+}
+
+function renderLicenses() {
+  const licenses = [...(state.licenses || [])].sort((a, b) => {
+    const left = toDate(a.issuedAt || a.issued_at)?.getTime() || 0;
+    const right = toDate(b.issuedAt || b.issued_at)?.getTime() || 0;
+    return right - left;
+  });
+
+  if (!licenses.length) {
+    ui.licensesTableBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="licenses-empty">No licenses have been issued yet.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  ui.licensesTableBody.innerHTML = licenses
+    .map((license) => {
+      const status = deriveLicenseState(license);
+      const badgeClass = status === 'ACTIVE' ? 'status-active' : status === 'REVOKED' ? 'status-revoked' : 'status-expired';
+      return `
+        <tr>
+          <td>${license.licenseId || 'n/a'}</td>
+          <td>${license.userId || 'n/a'}</td>
+          <td>${license.contentId || license.content_id || 'n/a'}</td>
+          <td>${formatDate(license.issuedAt || license.issued_at)}</td>
+          <td>${formatDate(license.expiresAt || license.expires_at)}</td>
+          <td><span class="license-state ${badgeClass}">${status}</span></td>
+        </tr>
+      `;
+    })
+    .join('');
+}
+
 function getLatestLicense() {
   if (!state.licenses.length) {
     return null;
@@ -88,16 +166,18 @@ function getLatestLicense() {
 
 async function refreshDashboard() {
   try {
-    const [chainData, licenseData, validationData] = await Promise.all([
+    const [chainData, licenseData, validationData, peersData] = await Promise.all([
       apiFetch('/blockchain'),
       apiFetch('/licenses'),
       apiFetch('/blockchain/validate'),
+      apiFetch('/peers'),
     ]);
 
     state.chain = chainData.blocks || [];
     state.licenses = licenseData.licenses || [];
+    const peerNames = Object.keys(peersData.peers || {});
 
-    const activeCount = state.licenses.filter((license) => license.status === 'ACTIVE').length;
+    const activeCount = state.licenses.filter((license) => deriveLicenseState(license) === 'ACTIVE').length;
     ui.activeLicenseCount.textContent = String(activeCount);
 
     if (validationData.valid) {
@@ -113,7 +193,10 @@ async function refreshDashboard() {
     }
 
     renderLedger();
-    addAuditEntry('Dashboard refreshed from the live backend.');
+    renderLicenses();
+    if (peerNames.length) {
+      addAuditEntry(`Known peers: ${peerNames.join(', ')}.`);
+    }
   } catch (error) {
     setResult(ui.licenseResult, 'error', `Unable to reach backend: ${error.message}`);
     setResult(ui.contentResult, 'error', `Unable to reach backend: ${error.message}`);
@@ -237,11 +320,55 @@ async function handleTampering() {
   }
 }
 
+async function handlePeerRegister() {
+  const peerName = ui.peerNameInput.value.trim();
+  if (!peerName) {
+    setResult(ui.licenseResult, 'error', 'Peer name is required.');
+    return;
+  }
+
+  try {
+    const result = await apiFetch('/peers', {
+      method: 'POST',
+      body: JSON.stringify({ name: peerName }),
+    });
+    setResult(ui.licenseResult, 'success', `Peer ${result.name} registered with ${result.chain_length} blocks.`);
+    addAuditEntry(`Peer ${result.name} registered.`);
+    await refreshDashboard();
+  } catch (error) {
+    setResult(ui.licenseResult, 'error', error.message);
+  }
+}
+
+async function handlePeerSync() {
+  const peerName = ui.peerNameInput.value.trim();
+  if (!peerName) {
+    setResult(ui.licenseResult, 'error', 'Enter a peer name before syncing.');
+    return;
+  }
+
+  try {
+    const result = await apiFetch(`/peers/${encodeURIComponent(peerName)}/sync`, { method: 'POST' });
+    if (result.adopted) {
+      setResult(ui.licenseResult, 'success', `Peer ${peerName} chain adopted successfully.`);
+      addAuditEntry(`Local chain synced with ${peerName}.`);
+    } else {
+      setResult(ui.licenseResult, 'error', `Peer ${peerName} was not adopted: ${result.reason}`);
+      addAuditEntry(`Peer sync rejected: ${result.reason}`);
+    }
+    await refreshDashboard();
+  } catch (error) {
+    setResult(ui.licenseResult, 'error', error.message);
+  }
+}
+
 ui.licenseForm.addEventListener('submit', handleLicenseCreate);
 ui.contentAccess.addEventListener('click', handleContentAccess);
 ui.validateChain.addEventListener('click', handleChainValidation);
 ui.revokeLicense.addEventListener('click', handleRevocation);
 ui.tamperChain.addEventListener('click', handleTampering);
+ui.registerPeer.addEventListener('click', handlePeerRegister);
+ui.syncPeer.addEventListener('click', handlePeerSync);
 
 refreshDashboard();
 renderAudit();

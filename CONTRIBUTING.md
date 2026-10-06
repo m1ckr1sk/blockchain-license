@@ -25,6 +25,7 @@ If a license is created, revoked, or used, the event should be traceable. Logs a
 ## Local Setup
 
 1. Create a virtual environment:
+
    ```bash
    python -m venv .venv
    source .venv/bin/activate   # Linux/macOS
@@ -32,18 +33,21 @@ If a license is created, revoked, or used, the event should be traceable. Logs a
    ```
 
 2. Install dependencies:
+
    ```bash
-   pip install fastapi uvicorn pydantic pytest
+   pip install -r requirements.txt
    ```
 
 3. Run the app locally:
+
    ```bash
    uvicorn app.main:app --reload
    ```
 
 4. Run tests:
+
    ```bash
-   pytest
+   pytest -q
    ```
 
 ## Code Standards
@@ -58,12 +62,13 @@ If a license is created, revoked, or used, the event should be traceable. Logs a
 ## Testing Expectations
 
 - Add or update tests for all bug fixes and new features.
-- Cover the main rule flows:
-  - valid access succeeds
-  - unauthorized access fails
-  - revoked access fails
-  - expired access fails
-  - chain tampering is detected
+- Cover the main rule flows: valid access succeeds.
+- Cover the main rule flows: unauthorized access fails.
+- Cover the main rule flows: revoked access fails.
+- Cover the main rule flows: expired access fails.
+- Cover the main rule flows: chain tampering is detected.
+- Cover the main rule flows: peer sync only adopts valid longer chains.
+- Cover the main rule flows: reconciliation recovers invalid local chain from valid peers.
 - Prefer focused tests over broad mock-heavy tests.
 - Keep test names descriptive and behavior-oriented.
 

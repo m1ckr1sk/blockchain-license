@@ -27,6 +27,28 @@ def get_license(request: Request, license_id: str) -> dict[str, Any]:
     return license
 
 
+@router.get("/peers")
+def get_peers(request: Request) -> dict[str, Any]:
+    return {"peers": request.app.state.blockchain.peers}
+
+
+@router.post("/peers")
+def register_peer(request: Request, payload: dict[str, str]) -> dict[str, Any]:
+    peer_name = payload.get("name")
+    if not peer_name:
+        raise HTTPException(status_code=400, detail="Peer name is required.")
+
+    return request.app.state.blockchain.register_peer(peer_name)
+
+
+@router.post("/peers/{peer_name}/sync")
+def sync_peer(request: Request, peer_name: str) -> dict[str, Any]:
+    try:
+        return request.app.state.blockchain.sync_with_peer(peer_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/blockchain")
 def get_blockchain(request: Request) -> dict[str, Any]:
     return {"blocks": request.app.state.blockchain.chain}
@@ -40,6 +62,14 @@ def validate_blockchain(request: Request) -> dict[str, Any]:
 @router.post("/blockchain/tamper")
 def tamper_blockchain(request: Request) -> dict[str, Any]:
     return request.app.state.blockchain.tamper_last_block()
+
+
+@router.post("/blockchain/reconcile")
+def reconcile_blockchain(request: Request) -> dict[str, Any]:
+    try:
+        return request.app.state.blockchain.reconcile_with_peers()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/licenses", status_code=201)
