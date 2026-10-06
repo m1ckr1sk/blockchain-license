@@ -1,5 +1,7 @@
 # FastAPI DRM Blockchain Demonstrator
 
+[![CI](https://github.com/m1ckr1sk/blockchain-license/actions/workflows/ci.yml/badge.svg)](https://github.com/m1ckr1sk/blockchain-license/actions/workflows/ci.yml)
+
 A simple proof-of-concept demonstrating how a blockchain-style ledger can be used for digital rights management (DRM) when protecting API-delivered content.
 
 ## Overview
