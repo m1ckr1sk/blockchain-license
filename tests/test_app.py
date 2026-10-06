@@ -1,8 +1,20 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.blockchain.service import BlockchainService
+from app.drm.service import DRMService
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def reset_app_state():
+    app.state.blockchain = BlockchainService()
+    app.state.drm_service = DRMService(app.state.blockchain)
+    yield
+    app.state.blockchain = BlockchainService()
+    app.state.drm_service = DRMService(app.state.blockchain)
 
 
 def test_genesis_block_is_created_and_chain_is_valid():
@@ -92,6 +104,59 @@ def test_missing_license_is_rejected():
     response = client.get("/content/content-999", params={"licenseId": "LIC-DOES-NOT-EXIST"})
 
     assert response.status_code == 403
+
+
+def test_demo_content_id_is_supported_by_the_license_flow():
+    client = TestClient(app)
+    expiry = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    response = client.post(
+        "/licenses",
+        json={"userId": "frank", "contentId": "course-module-01", "expiresAt": expiry},
+    )
+
+    assert response.status_code == 201
+    license_id = response.json()["licenseId"]
+
+    content_response = client.get("/content/course-module-01", params={"licenseId": license_id})
+    assert content_response.status_code == 200
+    assert content_response.json()["contentId"] == "course-module-01"
+
+
+def test_content_id_mismatch_is_rejected():
+    client = TestClient(app)
+    expiry = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    created = client.post(
+        "/licenses",
+        json={"userId": "mis-match-user", "contentId": "content-001", "expiresAt": expiry},
+    )
+    assert created.status_code == 201
+    license_id = created.json()["licenseId"]
+
+    response = client.get("/content/content-002", params={"licenseId": license_id})
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Access denied: CONTENT_MISMATCH"
+
+
+def test_content_access_is_denied_when_blockchain_is_tampered():
+    client = TestClient(app)
+    expiry = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    created = client.post(
+        "/licenses",
+        json={"userId": "erin", "contentId": "content-004", "expiresAt": expiry},
+    )
+    assert created.status_code == 201
+    license_id = created.json()["licenseId"]
+
+    tampered = client.post("/blockchain/tamper")
+    assert tampered.status_code == 200
+    assert tampered.json()["valid"] is False
+
+    denied = client.get("/content/content-004", params={"licenseId": license_id})
+    assert denied.status_code == 403
+    assert "BLOCKCHAIN" in denied.json()["detail"]
 
 
 def test_health_endpoint_and_tamper_endpoint_work_as_expected():

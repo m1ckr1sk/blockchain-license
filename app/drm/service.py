@@ -33,6 +33,11 @@ class DRMService:
                 "title": "Audit Trail Example",
                 "body": "This record demonstrates successful access and blockchain auditing.",
             },
+            "course-module-01": {
+                "contentId": "course-module-01",
+                "title": "Course Module 01",
+                "body": "This learning module is protected behind the valid license flow.",
+            },
         }
 
     def issue_license(self, user_id: str, content_id: str, expires_at: datetime) -> dict[str, Any]:
@@ -81,6 +86,10 @@ class DRMService:
         return license
 
     def validate_access(self, license_id: str, content_id: str) -> tuple[bool, str]:
+        blockchain_validation = self.blockchain.validate_chain()
+        if not blockchain_validation.get("valid", False):
+            return False, "BLOCKCHAIN_TAMPERED"
+
         license = self.licenses.get(license_id)
         if not license:
             return False, "LICENSE_NOT_FOUND"
